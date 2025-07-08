@@ -129,6 +129,7 @@ RESP = r"""{
 
 def request_chatgpt_engine(config):
     # 返回一个模拟的响应以便于测试
+    # input("回车以继续请求 ChatGPT 引擎...")  # 用于调试时暂停执行
     # return json.loads(RESP)
 
     url = "https://api.deerapi.com/v1/chat/completions"
