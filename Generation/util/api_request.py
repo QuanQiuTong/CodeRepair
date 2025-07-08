@@ -91,44 +91,17 @@ def create_chatgpt_config(prev: dict, message: str, max_tokens: int, bug_id, bug
 def handler(signum, frame):
     raise Exception("end of time")
 
-
-# 修改 request_chatgpt_engine 函数以将 API 回复写入文件
-
-def request_chatgpt_engine(config):
-    url = "https://api.deerapi.com/v1/chat/completions"
-    headers = {
-        'Accept': 'application/json',
-        'Authorization': 'sk-rXdg1my1TGhx9DPVKVy6qxaYUUOQpdqykBvsWsSJuUNo9iQq',
-        'User-Agent': 'DeerAPI/1.0.0 (https://api.deerapi.com)',
-        'Content-Type': 'application/json'
-    }
-    payload = json.dumps(config)
-    response = None
-    while response is None:
-        try:
-            response = requests.post(url, headers=headers, data=payload)
-            response.raise_for_status()
-            with open("chatgpt_engine_response.json", "a", encoding="utf-8") as f:  # 改为追加模式
-                f.write(json.dumps(response.json(), indent=4))
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print("API request error:", e)
-            time.sleep(5)  # 等待重试
-
-
-# 修改 request_engine 函数以将 API 回复写入文件
-
-RESP = """{
-    "id": "chatcmpl-BqzcqNmC2P3yfOZpTYBDzLqh8Twes",
+RESP = r"""{
+    "id": "chatcmpl-Br5YKYkrBlKjxJyyVnVPrLBJdfUUs",
     "object": "chat.completion",
-    "created": 1751969644,
+    "created": 1751992428,
     "model": "gpt-4o-mini-2024-07-18",
     "choices": [
         {
             "index": 0,
             "message": {
                 "role": "assistant",
-                "content": "To address the buggy line that was removed and to ensure the code properly checks for the `dataset` before trying to obtain its row count, we need to reintroduce the check for `dataset` being `null`. \n\nSince the expectation is that `dataset` should not be `null` for the method to function correctly in the context of adding `LegendItem` objects to the `result`, we can add the following line:\n\n```java\nif (dataset != null) {\n```\n\nHere",
+                "content": "Here is the corrected line that should be placed at the infill location:\n\n```java\nif (dataset == null) {\n```\n\n",
                 "refusal": null,
                 "annotations": []
             },
@@ -151,8 +124,33 @@ RESP = """{
             "rejected_prediction_tokens": 0
         }
     },
-    "system_fingerprint": "fp_57db37749c"
+    "system_fingerprint": "fp_efad92c60b"
 }"""
+
+def request_chatgpt_engine(config):
+    # 返回一个模拟的响应以便于测试
+    # return json.loads(RESP)
+
+    url = "https://api.deerapi.com/v1/chat/completions"
+    headers = {
+        'Accept': 'application/json',
+        'Authorization': 'sk-rXdg1my1TGhx9DPVKVy6qxaYUUOQpdqykBvsWsSJuUNo9iQq',
+        'User-Agent': 'DeerAPI/1.0.0 (https://api.deerapi.com)',
+        'Content-Type': 'application/json'
+    }
+    payload = json.dumps(config)
+    response = None
+    while response is None:
+        try:
+            response = requests.post(url, headers=headers, data=payload)
+            response.raise_for_status()
+            with open("chatgpt_engine_response.json", "a", encoding="utf-8") as f:  # 改为追加模式
+                f.write(json.dumps(response.json(), indent=4))
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print("API request error:", e)
+            time.sleep(5)  # 等待重试
+
 
 def request_engine(config):
     # 返回一个模拟的响应以便于测试
