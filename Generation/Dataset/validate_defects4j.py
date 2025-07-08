@@ -157,6 +157,16 @@ def grab_failing_testcode(bug_id, file_name, test_method_name, line_number, tmp_
 
 from Dataset.dataset import parse_defects4j_12
 def validate_one_patch(folder, patch, bug_id, dataset_name="defects4j_1.2_full", tmp_prefix="test", reset=False):
+    # 使用 _JAVA_OPTIONS 强制为所有后续的 JVM 进程设置系统属性
+    # 强制解决环境问题
+    java_opts = [
+        "-Djava.awt.headless=true",
+        "-Duser.language=en",
+        "-Duser.country=US"
+    ]
+    os.environ['_JAVA_OPTIONS'] = ' '.join(java_opts)
+    print(f"已设置环境变量 _JAVA_OPTIONS='{os.environ['_JAVA_OPTIONS']}'")
+    
     global REAL_SOURCE
     global bug_dict  # 确保bug_dict是全局变量
 
@@ -179,7 +189,7 @@ def validate_one_patch(folder, patch, bug_id, dataset_name="defects4j_1.2_full",
     print("Validating patch for bug: {}".format(bug_id))
 
     if bug_id not in bug_dict:
-        bug_id = bug_id.split(".java")[0]  # remove .java if exists
+        bug_id = bug_id.split(".java")[0]  # 作者忘了去掉 .java
 
     bug, project = bug_id.split("-")[1], bug_id.split("-")[0]
 
@@ -200,21 +210,19 @@ def validate_one_patch(folder, patch, bug_id, dataset_name="defects4j_1.2_full",
         print(checkout_result.stdout)
         print(checkout_result.stderr)
         
-        # 在 checkout 之后，直接修改项目的构建配置文件
-        config_file_path = f"/tmp/{tmp_bug_id}/defects4j.build.properties"
-        try:
-            with open(config_file_path, "a") as f:
-                # d4j.java.opts 是 Defects4j 用来传递给 JVM 的标准属性
-                # 我们同时设置 headless 模式和英语区域设置
-                opts = [
-                    "-Djava.awt.headless=true",
-                    "-Duser.language=en",
-                    "-Duser.country=US"
-                ]
-                f.write(f"\nd4j.java.opts={' '.join(opts)}\n")
-            print(f"成功向 {config_file_path} 添加 headless 和 en_US locale 配置。")
-        except FileNotFoundError:
-            print(f"警告: 无法找到配置文件 {config_file_path}。某些测试可能无法正确运行。")
+        # 我们现在使用环境变量，不再需要修改文件了
+        # config_file_path = f"/tmp/{tmp_bug_id}/defects4j.build.properties"
+        # try:
+        #     with open(config_file_path, "a") as f:
+        #         opts = [
+        #             "-Djava.awt.headless=true",
+        #             "-Duser.language=en",
+        #             "-Duser.country=US"
+        #         ]
+        #         f.write(f"\nd4j.java.opts={' '.join(opts)}\n")
+        #     print(f"成功向 {config_file_path} 添加 headless 和 en_US locale 配置。")
+        # except FileNotFoundError:
+        #     print(f"警告: 无法找到配置文件 {config_file_path}。")
 
     testmethods = os.popen('defects4j export -w %s -p tests.trigger' % ('/tmp/' + tmp_bug_id)).readlines()
     source_dir = os.popen("defects4j export -p dir.src.classes -w /tmp/" + tmp_bug_id).readlines()[-1].strip()
