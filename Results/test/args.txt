@@ -1,0 +1,1 @@
+Namespace(folder='Results/test', lang='Java', dataset='defects4j-1.2-single-line', chatgpt=False, few_shot=1, chain_length=3, total_tries=200, suffix=True, failing_test=False, assertion_line=True, failing_test_method=False, hunk=False, tmp_prefix='test', key_file='api_key.txt')
