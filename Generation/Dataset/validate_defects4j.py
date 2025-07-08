@@ -1,6 +1,5 @@
 import json
 import time
-import javalang
 import subprocess
 import re
 import os
@@ -17,25 +16,19 @@ def run_d4j_test(source, testmethods, bug_id, project, bug):
     entire_bugg = False
     error_string = ""
 
-    # =================================================================
-    #  因为我们的修复模式是“填空”，javalang 无法正确解析不完整的代码片段，
-    #  会导致误报“Syntax Error”。我们直接依靠后续的 defects4j 编译来做语法检查。
-    #  因此，注释掉下面这段代码。
-    # =================================================================
-    # try:
-    #     tokens = javalang.tokenizer.tokenize(source)
-    #     parser = javalang.parser.Parser(tokens)
-    #     parser.parse()
-    # except:
-    #     print("Syntax Error")
-    #     return compile_fail, timed_out, bugg, entire_bugg, True, "SyntaxError"
+    # 创建一个继承自当前环境的新环境字典
+    test_env = os.environ.copy()
+    # 设置 ANT_OPTS 来启用 headless 模式，这将传递给 defects4j 调用的 ant
+    test_env["ANT_OPTS"] = "-Djava.awt.headless=true"
 
     for t in testmethods:
         cmd = 'defects4j test -w %s/ -t %s' % (('/tmp/' + bug_id), t.strip())
         Returncode = ""
         error_file = open("stderr.txt", "wb")
+
+        # 在 Popen 调用中传入修改后的环境
         child = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=error_file, bufsize=-1,
-                                 start_new_session=True)
+                                 start_new_session=True, env=test_env)
         while_begin = time.time()
         while True:
             Flag = child.poll()
@@ -82,11 +75,12 @@ def run_d4j_test(source, testmethods, bug_id, project, bug):
     if not bugg:
         print('So you pass the basic tests, Check if it passes all the test, include the previously passing tests')
         cmd = 'defects4j test -w %s/' % ('/tmp/' + bug_id)
+        # 同样，在全量测试的 Popen 调用中也传入修改后的环境
         child = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=-1,
-                                 start_new_session=True)
+                                 start_new_session=True, env=test_env)
         try:
             # 使用 communicate 并设置超时
-            stdout, stderr = child.communicate(timeout=20)
+            stdout, stderr = child.communicate(timeout=180)
             stdout_str = stdout.decode('utf-8', errors='ignore')
             stderr_str = stderr.decode('utf-8', errors='ignore')
             error_string = stdout_str + stderr_str
@@ -103,11 +97,10 @@ def run_d4j_test(source, testmethods, bug_id, project, bug):
                 entire_bugg = True
 
         except subprocess.TimeoutExpired:
-            # print("全量测试超时！")
-            # 视作通过，因为X11/AWTError会导致超时，而WSL根本没有 X11 环境
-
+            print("全量测试超时！")
+            # 超时现在应该被视为真正的失败，因为我们已经解决了AWT卡死问题
             os.killpg(os.getpgid(child.pid), signal.SIGTERM)
-            # bugg = True
+            bugg = True
             # error_string = "TimeOutError"
         except Exception as e:
             print(f"全量测试出现未知异常: {e}")
@@ -202,8 +195,20 @@ def validate_one_patch(folder, patch, bug_id, dataset_name="defects4j_1.2_full",
     if reset:  # check out project again
         subprocess.run('rm -rf ' + '/tmp/' + tmp_prefix + "*", shell=True)  # clean up
         subprocess.run('rm -rf ' + '/tmp/' + tmp_bug_id, shell=True)
-        subprocess.run("defects4j checkout -p %s -v %s -w %s" % (project, bug + 'b', ('/tmp/' + tmp_bug_id)),
-                       shell=True)
+        checkout_result = subprocess.run("defects4j checkout -p %s -v %s -w %s" % (project, bug + 'b', ('/tmp/' + tmp_bug_id)),
+                       shell=True, capture_output=True, text=True)
+        print(checkout_result.stdout)
+        print(checkout_result.stderr)
+        
+        # 在 checkout 之后，直接修改项目的构建配置文件，强制启用 headless 模式
+        config_file_path = f"/tmp/{tmp_bug_id}/defects4j.build.properties"
+        try:
+            with open(config_file_path, "a") as f:
+                # d4j.java.opts 是 Defects4j 用来传递给 JVM 的标准属性
+                f.write("\nd4j.java.opts=-Djava.awt.headless=true\n")
+            print(f"成功向 {config_file_path} 添加 headless 模式配置。")
+        except FileNotFoundError:
+            print(f"警告: 无法找到配置文件 {config_file_path}。测试可能仍会因 AWTError 失败。")
 
     testmethods = os.popen('defects4j export -w %s -p tests.trigger' % ('/tmp/' + tmp_bug_id)).readlines()
     source_dir = os.popen("defects4j export -p dir.src.classes -w /tmp/" + tmp_bug_id).readlines()[-1].strip()
