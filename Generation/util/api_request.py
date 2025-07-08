@@ -108,8 +108,8 @@ def request_chatgpt_engine(config):
         try:
             response = requests.post(url, headers=headers, data=payload)
             response.raise_for_status()
-            with open("chatgpt_engine_response.json", "w", encoding="utf-8") as f:
-                f.write(response.text)
+            with open("chatgpt_engine_response.json", "a", encoding="utf-8") as f:  # 改为追加模式
+                f.write(json.dumps(response.json(), indent=4))
             return response.json()
         except requests.exceptions.RequestException as e:
             print("API request error:", e)
@@ -118,7 +118,46 @@ def request_chatgpt_engine(config):
 
 # 修改 request_engine 函数以将 API 回复写入文件
 
+RESP = """{
+    "id": "chatcmpl-BqzcqNmC2P3yfOZpTYBDzLqh8Twes",
+    "object": "chat.completion",
+    "created": 1751969644,
+    "model": "gpt-4o-mini-2024-07-18",
+    "choices": [
+        {
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": "To address the buggy line that was removed and to ensure the code properly checks for the `dataset` before trying to obtain its row count, we need to reintroduce the check for `dataset` being `null`. \n\nSince the expectation is that `dataset` should not be `null` for the method to function correctly in the context of adding `LegendItem` objects to the `result`, we can add the following line:\n\n```java\nif (dataset != null) {\n```\n\nHere",
+                "refusal": null,
+                "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "length"
+        }
+    ],
+    "usage": {
+        "prompt_tokens": 358,
+        "completion_tokens": 100,
+        "total_tokens": 458,
+        "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+        }
+    },
+    "system_fingerprint": "fp_57db37749c"
+}"""
+
 def request_engine(config):
+    # 返回一个模拟的响应以便于测试
+    # return json.loads(RESP)
+
     url = "https://api.deerapi.com/v1/completions"
     headers = {
         'Accept': 'application/json',
@@ -132,8 +171,8 @@ def request_engine(config):
         try:
             response = requests.post(url, headers=headers, data=payload)
             response.raise_for_status()
-            with open("engine_response.json", "w", encoding="utf-8") as f:
-                f.write(response.text)
+            with open("engine_response.json", "a", encoding="utf-8") as f:  # 改为追加模式
+                f.write(json.dumps(response.json(), indent=4))
             return response.json()
         except requests.exceptions.RequestException as e:
             print("API request error:", e)

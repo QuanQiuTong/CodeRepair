@@ -7,7 +7,7 @@ import tiktoken
 from Dataset.validate_defects4j import validate_one_patch
 
 # 定义项目根目录
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 graph_based = ["breadth_first_search",
                "depth_first_search",
@@ -187,7 +187,7 @@ def write_file(args, folder, patch, file_name, bug, skip_val=True, lang="python"
         if "defects4j" in args.dataset:
             print(f"Validating Java patch for bug {bug}...")
             valid, message = validate_one_patch(
-                folder=os.path.join(ROOT, "Dataset"),
+                folder=ROOT+"/Dataset/",
                 patch=patch,
                 bug_id=bug,
                 dataset_name=args.dataset,
