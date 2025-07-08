@@ -200,15 +200,21 @@ def validate_one_patch(folder, patch, bug_id, dataset_name="defects4j_1.2_full",
         print(checkout_result.stdout)
         print(checkout_result.stderr)
         
-        # 在 checkout 之后，直接修改项目的构建配置文件，强制启用 headless 模式
+        # 在 checkout 之后，直接修改项目的构建配置文件
         config_file_path = f"/tmp/{tmp_bug_id}/defects4j.build.properties"
         try:
             with open(config_file_path, "a") as f:
                 # d4j.java.opts 是 Defects4j 用来传递给 JVM 的标准属性
-                f.write("\nd4j.java.opts=-Djava.awt.headless=true\n")
-            print(f"成功向 {config_file_path} 添加 headless 模式配置。")
+                # 我们同时设置 headless 模式和英语区域设置
+                opts = [
+                    "-Djava.awt.headless=true",
+                    "-Duser.language=en",
+                    "-Duser.country=US"
+                ]
+                f.write(f"\nd4j.java.opts={' '.join(opts)}\n")
+            print(f"成功向 {config_file_path} 添加 headless 和 en_US locale 配置。")
         except FileNotFoundError:
-            print(f"警告: 无法找到配置文件 {config_file_path}。测试可能仍会因 AWTError 失败。")
+            print(f"警告: 无法找到配置文件 {config_file_path}。某些测试可能无法正确运行。")
 
     testmethods = os.popen('defects4j export -w %s -p tests.trigger' % ('/tmp/' + tmp_bug_id)).readlines()
     source_dir = os.popen("defects4j export -p dir.src.classes -w /tmp/" + tmp_bug_id).readlines()[-1].strip()
