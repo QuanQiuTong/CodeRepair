@@ -248,6 +248,7 @@ def chatgpt_apr(args, bugs):
                 if func != "":
                     print(get_unified_diff(v['buggy'], func))
                     if func not in generations:
+                        args.lang = args.lang.lower()
                         if args.lang == "java":
                             valid, error_message = write_file(args, args.folder, func,
                                                   bug.split(".java")[0] + "_{}.java".format(

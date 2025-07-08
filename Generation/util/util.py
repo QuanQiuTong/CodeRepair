@@ -160,7 +160,7 @@ def complex_chatgpt_localize_parse(gen_body):
 
 
 def write_file(args, folder, patch, file_name, bug, skip_val=True, lang="python", reset=False):
-    file_path = os.path.join(folder, file_name)
+    file_path = os.path.join(folder, file_name).replace(".py", ".java")
     with open(file_path, "w") as f:
         f.write(patch)
 
