@@ -14,10 +14,12 @@ from prompt import INIT_CHATGPT_INFILL_FAILING_TEST, INIT_CHATGPT_INFILL_FAILING
     INIT_CHATGPT_INFILL_HUNK_FAILING_TEST_LINE_QUIXBUGS
 from util.api_request import create_chatgpt_config, request_chatgpt_engine
 from util.api_request import create_openai_config, request_engine
+from util.qwen_request import request_qwen_engine, CONCISE_QWEN_SYSTEM_PROMPT
 from util.util import simple_chatgpt_parse, complex_chatgpt_parse, num_tokens_from_messages
 from util.util import write_file, build_error_message_based_chatgpt_response_message, build_values
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+my_request = request_qwen_engine
 
 def load_length(lang="python"):
     if lang == "python":
@@ -33,9 +35,9 @@ def chatgpt_apr_infill(args, bugs):
     INFILL_TOKEN = ">>> [ INFILL ] <<<"
     print(len(bugs))
     if args.hunk:
-        max_tokens = 200
+        max_tokens = 200 + 200 # for CoT
     else:
-        max_tokens = 100
+        max_tokens = 100 + 200 # for CoT
     results = {}
     # with open(os.path.join(args.folder, "lm_repair.json"), "r") as f:
     #     results = json.load(f)
@@ -106,6 +108,8 @@ def chatgpt_apr_infill(args, bugs):
                 prompt = INIT_CHATGPT_INFILL_PROMPT.format(
                     buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
                     buggy_hunk=v['buggy_line'])
+
+        prompt += "Be brief. Do not repeat the problem description, just provide the fix. Wrap the fix in a \n```\ncode block\n```"
         print(prompt)
         config = create_chatgpt_config(prev={}, message=prompt, max_tokens=max_tokens,
                                        bug_id=bug, bugs=bugs, few_shot=args.few_shot, hunk=args.hunk, dataset=args.dataset)
@@ -129,7 +133,12 @@ def chatgpt_apr_infill(args, bugs):
                     break
                 for message in config['messages']:
                     print("{} : {}".format(message['role'], message['content']))
-                ret = request_chatgpt_engine(config)
+                ret = my_request(config)
+
+                # 统计并打印输出 token 数量
+                completion_tokens = ret['usage']['completion_tokens']
+                print(f"Tries: {tries + 1} | Output Tokens: {completion_tokens}")
+
                 tries += 1
                 # print(ret["choices"][0]['message'])
                 func, pre_history = complex_chatgpt_parse(ret["choices"][0]['message']["content"],
@@ -241,7 +250,7 @@ def chatgpt_apr(args, bugs):
                     break
                 for message in config['messages']:
                     print("{} : {}".format(message['role'], message['content']))
-                ret = request_chatgpt_engine(config)
+                ret = my_request(config)
                 tries += 1
                 func, pre_history = simple_chatgpt_parse(ret["choices"][0]['message']["content"])
                 print("Tries: {} Tokens: {}".format(tries, num_tokens_from_messages(config["messages"])))
@@ -314,7 +323,14 @@ def main():
     parser.add_argument("--hunk", action="store_true")
     parser.add_argument("--tmp_prefix", type=str, default="test")
     parser.add_argument("--key_file", type=str, default="api_key.txt")
+    parser.add_argument("--engine", type=str, default="qwen", help="Engine to use: chatgpt or qwen")
     args = parser.parse_args()
+
+    global my_request
+    if args.engine == "qwen":
+        my_request = request_qwen_engine
+    else:
+        my_request = request_chatgpt_engine
 
     openai.api_key = open(args.key_file, 'r').read().strip()
     os.makedirs(args.folder, exist_ok=True)
