@@ -14,7 +14,7 @@ from prompt import INIT_CHATGPT_INFILL_FAILING_TEST, INIT_CHATGPT_INFILL_FAILING
     INIT_CHATGPT_INFILL_HUNK_FAILING_TEST_LINE_QUIXBUGS
 from util.api_request import create_chatgpt_config, request_chatgpt_engine
 from util.api_request import create_openai_config, request_engine
-from util.qwen_request import request_qwen_engine, CONCISE_QWEN_SYSTEM_PROMPT
+from util.qwen_request import request_qwen_engine
 from util.util import simple_chatgpt_parse, complex_chatgpt_parse, num_tokens_from_messages
 from util.util import write_file, build_error_message_based_chatgpt_response_message, build_values
 
@@ -31,13 +31,73 @@ def load_length(lang="python"):
     return length
 
 
+ATTACHED_PROMPT = "\nProvide the fix only, with the least thinking.\n" \
+                    "The fix should be a single line wrapped in \n```\ncode block\n```\n"
+
+def build_prompt(args, v):
+    INFILL_TOKEN=">>> [ INFILL ] <<<"
+    if args.failing_test:
+        prompt = INIT_CHATGPT_INFILL_FAILING_TEST.format(
+            buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+            buggy_hunk=v['buggy_line'],
+            failing_test=v['failing_tests'][0]['test_method_name'],
+            error_message=v['failing_tests'][0]['failure_message'].strip())
+    elif args.assertion_line:
+        if args.hunk:
+            if "defects4j" in args.dataset:
+                prompt = INIT_CHATGPT_INFILL_HUNK_FAILING_TEST_LINE.format(
+                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+                    buggy_hunk=v['buggy_line'],
+                    failing_test=v['failing_tests'][0]['test_method_name'],
+                    error_message=v['failing_tests'][0]['failure_message'].strip(),
+                    failing_line=v['failing_tests'][0]['failing_line'].strip())
+            else:
+                prompt = INIT_CHATGPT_INFILL_HUNK_FAILING_TEST_LINE_QUIXBUGS.format(
+                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+                    buggy_hunk=v['buggy_line'],
+                    function_header=v['function_header'],
+                    values=build_values(v['failing_tests']['input_values']),
+                    return_val=v['failing_tests']['output_values'])
+        else:
+            if "defects4j" in args.dataset:
+                prompt = INIT_CHATGPT_INFILL_FAILING_TEST_LINE.format(
+                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+                    buggy_hunk=v['buggy_line'],
+                    failing_test=v['failing_tests'][0]['test_method_name'],
+                    error_message=v['failing_tests'][0]['failure_message'].strip(),
+                    failing_line=v['failing_tests'][0]['failing_line'].strip())
+            else:
+                prompt = INIT_CHATGPT_INFILL_LINE_FAILING_TEST_LINE_QUIXBUGS.format(
+                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+                    buggy_hunk=v['buggy_line'],
+                    function_header=v['function_header'],
+                    values=build_values(v['failing_tests']['input_values']),
+                    return_val=v['failing_tests']['output_values'])
+    elif args.failing_test_method:
+        failing_function = v['failing_tests'][0]['failing_function'].splitlines()
+        leading_white_space = len(failing_function[0]) - len(failing_function[0].lstrip())
+        failing_function = "\n".join([line[leading_white_space:] for line in failing_function])
+        prompt = INIT_CHATGPT_INFILL_FAILING_TEST_METHOD.format(
+            buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+            buggy_hunk=v['buggy_line'],
+            failing_test_method=failing_function,
+            error_message=v['failing_tests'][0]['failure_message'].strip())
+    else:
+        if args.hunk:
+            prompt = INIT_CHATGPT_INFILL_HUNK.format(
+                buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+                buggy_hunk=v['buggy_line'])
+        else:
+            prompt = INIT_CHATGPT_INFILL_PROMPT.format(
+                buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+                buggy_hunk=v['buggy_line'])
+
 def chatgpt_apr_infill(args, bugs):
-    INFILL_TOKEN = ">>> [ INFILL ] <<<"
     print(len(bugs))
     if args.hunk:
-        max_tokens = 200 + 200 # for CoT
+        max_tokens = 200 # + 200 # for CoT
     else:
-        max_tokens = 100 + 200 # for CoT
+        max_tokens = 100 # + 200 # for CoT
     results = {}
     # with open(os.path.join(args.folder, "lm_repair.json"), "r") as f:
     #     results = json.load(f)
@@ -53,64 +113,12 @@ def chatgpt_apr_infill(args, bugs):
         # found = True
         # if bug in results:
         #     continue
-        if args.failing_test:
-            prompt = INIT_CHATGPT_INFILL_FAILING_TEST.format(
-                buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                buggy_hunk=v['buggy_line'],
-                failing_test=v['failing_tests'][0]['test_method_name'],
-                error_message=v['failing_tests'][0]['failure_message'].strip())
-        elif args.assertion_line:
-            if args.hunk:
-                if "defects4j" in args.dataset:
-                    prompt = INIT_CHATGPT_INFILL_HUNK_FAILING_TEST_LINE.format(
-                        buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                        buggy_hunk=v['buggy_line'],
-                        failing_test=v['failing_tests'][0]['test_method_name'],
-                        error_message=v['failing_tests'][0]['failure_message'].strip(),
-                        failing_line=v['failing_tests'][0]['failing_line'].strip())
-                else:
-                    prompt = INIT_CHATGPT_INFILL_HUNK_FAILING_TEST_LINE_QUIXBUGS.format(
-                        buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                        buggy_hunk=v['buggy_line'],
-                        function_header=v['function_header'],
-                        values=build_values(v['failing_tests']['input_values']),
-                        return_val=v['failing_tests']['output_values'])
-            else:
-                if "defects4j" in args.dataset:
-                    prompt = INIT_CHATGPT_INFILL_FAILING_TEST_LINE.format(
-                        buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                        buggy_hunk=v['buggy_line'],
-                        failing_test=v['failing_tests'][0]['test_method_name'],
-                        error_message=v['failing_tests'][0]['failure_message'].strip(),
-                        failing_line=v['failing_tests'][0]['failing_line'].strip())
-                else:
-                    prompt = INIT_CHATGPT_INFILL_LINE_FAILING_TEST_LINE_QUIXBUGS.format(
-                        buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                        buggy_hunk=v['buggy_line'],
-                        function_header=v['function_header'],
-                        values=build_values(v['failing_tests']['input_values']),
-                        return_val=v['failing_tests']['output_values'])
-        elif args.failing_test_method:
-            failing_function = v['failing_tests'][0]['failing_function'].splitlines()
-            leading_white_space = len(failing_function[0]) - len(failing_function[0].lstrip())
-            failing_function = "\n".join([line[leading_white_space:] for line in failing_function])
-            prompt = INIT_CHATGPT_INFILL_FAILING_TEST_METHOD.format(
-                buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                buggy_hunk=v['buggy_line'],
-                failing_test_method=failing_function,
-                error_message=v['failing_tests'][0]['failure_message'].strip())
-        else:
-            if args.hunk:
-                prompt = INIT_CHATGPT_INFILL_HUNK.format(
-                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                    buggy_hunk=v['buggy_line'])
-            else:
-                prompt = INIT_CHATGPT_INFILL_PROMPT.format(
-                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                    buggy_hunk=v['buggy_line'])
 
-        prompt += "Be brief. Do not repeat the problem description, just provide the fix. Wrap the fix in a \n```\ncode block\n```"
-        print(prompt)
+        base_prompt = build_prompt(args, v)
+
+        # "Be brief, do not repeat the problem description, just provide the fix. Wrap the fix in a \n```\ncode block\n```"
+        prompt = base_prompt + ATTACHED_PROMPT
+
         config = create_chatgpt_config(prev={}, message=prompt, max_tokens=max_tokens,
                                        bug_id=bug, bugs=bugs, few_shot=args.few_shot, hunk=args.hunk, dataset=args.dataset)
         if num_tokens_from_messages(config["messages"]) + max_tokens > 4096:
@@ -178,8 +186,19 @@ def chatgpt_apr_infill(args, bugs):
                         break
 
                     history = config
-                    history["messages"].append({"role": "assistant", "content": pre_history})
+                    # 注意：这里的 pre_history 是经过 qwen_request.py 清理后的，不含 <think>
+                    history["messages"].append({"role": "assistant", "content": pre_history}) 
+                    
+                    # 生成基础的错误信息
                     response = build_error_message_based_chatgpt_response_message(args, error_message, v, args.hunk)
+                    
+                    # 加入明确的负面约束，告诉模型哪个 patch 失败了
+                    failed_patch = func.strip()
+                    response += f"\nYour previous attempt was:\n```java\n{failed_patch}\n```\nThis was incorrect. Do not generate this line again."
+
+                    # 在反馈消息后追加关键指令，以保持输出简洁
+                    response += ATTACHED_PROMPT
+                    
                     history["messages"].append({"role": "user", "content": response})
                     prompt_times += 1
                     repeated_bad = False

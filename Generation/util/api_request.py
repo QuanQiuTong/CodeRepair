@@ -14,6 +14,11 @@ from prompt import CHATGPT_LOCALIZE_PROMPT, CHATGPT_LOCALIZE_RESPONSE
 from util.util import get_initial_failing_tests, build_values
 
 
+# 要求回答简洁
+SYSTEM_MESSAGE = "You are an Automated Program Repair tool.\n" \
+                "Your task is to fix a buggy function or line of code.\n" \
+                "Be brief. Provide only the fix, with the least thinking.\n" \
+
 def create_openai_config(prompt,
                          engine_name="code-davinci-002",
                          stop="# Provide a fix for the buggy function",
@@ -34,7 +39,7 @@ def create_openai_config(prompt,
 # 修改 create_chatgpt_config 函数以支持 DeerAPI 的请求格式
 def create_chatgpt_config(prev: dict, message: str, max_tokens: int, bug_id, bugs, few_shot: int = 0,
                           temperature: float = 1, # default most diverse temperature
-                          system_message: str = "You are an Automated Program Repair tool.",
+                          system_message: str = SYSTEM_MESSAGE,
                           localize: bool = False,
                           hunk: bool = False,
                           function: bool =False,

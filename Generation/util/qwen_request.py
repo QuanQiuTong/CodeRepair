@@ -26,7 +26,10 @@ def request_qwen_engine(config, model_path=DEFAULT_QWEN_MODEL_PATH):
     prompt = _qwen_tokenizer.apply_chat_template(
         config["messages"], tokenize=False, add_generation_prompt=True
     )
-    print("\n-----[Qwen Prompt]-----\n" + prompt + "\n---------------\n")
+    print("\n-----[above is Qwen prompt]-----\n")
+
+    # print("\n-----[Qwen Prompt]-----\n" + prompt + "\n---------------\n")
+
     inputs = _qwen_tokenizer([prompt], return_tensors="pt").to(_qwen_model.device)
     outputs = _qwen_model.generate(
         inputs.input_ids,
@@ -37,19 +40,29 @@ def request_qwen_engine(config, model_path=DEFAULT_QWEN_MODEL_PATH):
     response = _qwen_tokenizer.decode(generated[0], skip_special_tokens=True)
     print("\n-----[Qwen Raw Output]-----\n" + response + "\n---------------\n")
 
-    # 从原始响应中提取代码块
+    # 从原始响应中提取代码块，并移除思维链
     extracted_code = response
-    if "```" in response:
+    # 优先移除 <think> 标签
+    if "<think>" in extracted_code:
+        # 假设 <think> ... </think> 之后是代码
+        think_end_index = extracted_code.rfind("</think>")
+        if think_end_index != -1:
+            extracted_code = extracted_code[think_end_index + len("</think>"):]
+
+    if "```" in extracted_code:
         # 假设代码在第一个 ``` 块中
-        parts = response.split("```")
+        parts = extracted_code.split("```")
         if len(parts) > 1:
             # 提取代码块内容，并移除可能的语言标识符（如 java）
-            code_content = parts[1]
-            if code_content.startswith("java\n"):
-                code_content = code_content[5:]
-            elif code_content.startswith("java"):
-                 code_content = code_content[4:]
+            code_content = parts[1].strip() # 使用 strip() 清理空白
+            if code_content.startswith("java"):
+                code_content = '\n'.join(code_content.split('\n')[1:])
+            
+            # 返回一个干净的、只包含代码块的字符串
             extracted_code = "```java\n" + code_content + "\n```"
+    else:
+        # 如果没有代码块，可能模型只生成了代码行
+        extracted_code = response.strip()
 
     return {
         "choices": [{"message": {"content": extracted_code}}],
