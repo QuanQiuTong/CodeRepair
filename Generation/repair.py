@@ -6,12 +6,11 @@ import openai
 
 from Dataset.dataset import parse_defects4j_12, parse_defects4j_2
 from Dataset.dataset import parse_python, parse_java, get_unified_diff
-from prompt import INIT_PROMPT, INIT_CHATGPT_PROMPT, INIT_CHATGPT_INFILL_PROMPT
-from prompt import INIT_CHATGPT_INFILL_FAILING_TEST, INIT_CHATGPT_INFILL_FAILING_TEST_LINE, \
-    INIT_CHATGPT_INFILL_FAILING_TEST_METHOD, INIT_CHATGPT_INFILL_HUNK_FAILING_TEST_LINE, \
-    INIT_CHATGPT_INFILL_FUNCTION_FAILING_TEST_LINE, INIT_CHATGPT_INFILL_HUNK, INIT_CHATGPT_INFILL_FUNCTION, \
-    INIT_CHATGPT_INFILL_FUNCTION_FAILING_QUIXBUGS, INIT_CHATGPT_INFILL_LINE_FAILING_TEST_LINE_QUIXBUGS, \
-    INIT_CHATGPT_INFILL_HUNK_FAILING_TEST_LINE_QUIXBUGS
+from prompt import INIT_PROMPT, INIT_CHATGPT_INFILL_FUNCTION_FAILING_TEST_LINE, INIT_CHATGPT_INFILL_FUNCTION, \
+    INIT_CHATGPT_INFILL_FUNCTION_FAILING_QUIXBUGS
+from prompt import build_prompt_en
+from prompt_zh import build_prompt_zh
+
 from util.api_request import create_chatgpt_config, request_chatgpt_engine
 from util.api_request import create_openai_config, request_engine
 from util.qwen_request import request_qwen_engine
@@ -31,65 +30,6 @@ def load_length(lang="python"):
     return length
 
 ATTACHED_PROMPT = "\nVERY IMPORTANT: Your final answer must be ONLY the single line of corrected Java code inside a code block. Do not provide any explanation, preamble, or thinking process. Your entire response should be in the format ```java\n[CODE]\n```."
-
-def build_prompt(args, v):
-    INFILL_TOKEN=">>> [ INFILL ] <<<"
-    if args.failing_test:
-        prompt = INIT_CHATGPT_INFILL_FAILING_TEST.format(
-            buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-            buggy_hunk=v['buggy_line'],
-            failing_test=v['failing_tests'][0]['test_method_name'],
-            error_message=v['failing_tests'][0]['failure_message'].strip())
-    elif args.assertion_line:
-        if args.hunk:
-            if "defects4j" in args.dataset:
-                prompt = INIT_CHATGPT_INFILL_HUNK_FAILING_TEST_LINE.format(
-                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                    buggy_hunk=v['buggy_line'],
-                    failing_test=v['failing_tests'][0]['test_method_name'],
-                    error_message=v['failing_tests'][0]['failure_message'].strip(),
-                    failing_line=v['failing_tests'][0]['failing_line'].strip())
-            else:
-                prompt = INIT_CHATGPT_INFILL_HUNK_FAILING_TEST_LINE_QUIXBUGS.format(
-                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                    buggy_hunk=v['buggy_line'],
-                    function_header=v['function_header'],
-                    values=build_values(v['failing_tests']['input_values']),
-                    return_val=v['failing_tests']['output_values'])
-        else:
-            if "defects4j" in args.dataset:
-                prompt = INIT_CHATGPT_INFILL_FAILING_TEST_LINE.format(
-                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                    buggy_hunk=v['buggy_line'],
-                    failing_test=v['failing_tests'][0]['test_method_name'],
-                    error_message=v['failing_tests'][0]['failure_message'].strip(),
-                    failing_line=v['failing_tests'][0]['failing_line'].strip())
-            else:
-                prompt = INIT_CHATGPT_INFILL_LINE_FAILING_TEST_LINE_QUIXBUGS.format(
-                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                    buggy_hunk=v['buggy_line'],
-                    function_header=v['function_header'],
-                    values=build_values(v['failing_tests']['input_values']),
-                    return_val=v['failing_tests']['output_values'])
-    elif args.failing_test_method:
-        failing_function = v['failing_tests'][0]['failing_function'].splitlines()
-        leading_white_space = len(failing_function[0]) - len(failing_function[0].lstrip())
-        failing_function = "\n".join([line[leading_white_space:] for line in failing_function])
-        prompt = INIT_CHATGPT_INFILL_FAILING_TEST_METHOD.format(
-            buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-            buggy_hunk=v['buggy_line'],
-            failing_test_method=failing_function,
-            error_message=v['failing_tests'][0]['failure_message'].strip())
-    else:
-        if args.hunk:
-            prompt = INIT_CHATGPT_INFILL_HUNK.format(
-                buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                buggy_hunk=v['buggy_line'])
-        else:
-            prompt = INIT_CHATGPT_INFILL_PROMPT.format(
-                buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
-                buggy_hunk=v['buggy_line'])
-    return prompt
 
 def _build_dynamic_prompt(base_prompt, failed_patches):
     """将历史失败记录追加到基础Prompt后，构建用于当次请求的完整Prompt。"""
@@ -118,8 +58,8 @@ def chatgpt_apr_infill(args, bugs):
         if "suffix" not in v or (not args.hunk and bug == "subsequences"):
             continue
 
-        base_prompt = build_prompt(args, v)
-        
+        base_prompt = build_prompt_zh(args, v) if args.engine == "qwen" else build_prompt_en(args, v)
+
         failed_patches = []
         generations = {}
         results[bug] = []
@@ -360,6 +300,8 @@ def main():
     global my_request
     if args.engine == "qwen":
         my_request = request_qwen_engine
+        global ATTACHED_PROMPT
+        ATTACHED_PROMPT = "\n非常重要：最终答案必须仅包含一个代码块内的单行修正Java代码。不要提供任何解释、前言或思考过程。你的整个回答应为以下格式：```java\n[CODE]\n```。"
     else:
         my_request = request_chatgpt_engine
 
