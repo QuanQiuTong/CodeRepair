@@ -31,21 +31,11 @@ def request_qwen_engine(config, model_path=DEFAULT_QWEN_MODEL_PATH):
 
     # print("\n-----[Qwen Prompt]-----\n" + prompt + "\n---------------\n")
 
-    # --- 定义停止词 ---
-    # 我们希望模型在生成代码块后立即停止
-    stop_words = ["```", "<|im_end|>", "user :"] 
-    stop_token_ids = [
-        _qwen_tokenizer.encode(word, add_special_tokens=False) for word in stop_words
-    ]
-    # transformers 需要一个列表的列表
-    stop_token_ids = [item for sublist in stop_token_ids for item in sublist]
-
     inputs = _qwen_tokenizer([prompt], return_tensors="pt").to(_qwen_model.device)
     outputs = _qwen_model.generate(
         inputs.input_ids,
-        max_new_tokens=config.get("max_tokens", 512) + 1024,  # 思维链太长了
-        temperature=config.get("temperature", 1.0),
-        eos_token_id=stop_token_ids # 应用停止词
+        max_new_tokens=config.get("max_tokens", 512) + 2048,  # 思维链太长了
+        temperature=config.get("temperature", 0.7)
     )
     generated = outputs[:, inputs.input_ids.shape[-1]:]
     response = _qwen_tokenizer.decode(generated[0], skip_special_tokens=True)
