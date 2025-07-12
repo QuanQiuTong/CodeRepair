@@ -1,3 +1,64 @@
+from util.util import build_values
+
+def build_prompt_en(args, v):
+    INFILL_TOKEN=">>> [ INFILL ] <<<"
+    if args.failing_test:
+        prompt = INIT_CHATGPT_INFILL_FAILING_TEST.format(
+            buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+            buggy_hunk=v['buggy_line'],
+            failing_test=v['failing_tests'][0]['test_method_name'],
+            error_message=v['failing_tests'][0]['failure_message'].strip())
+    elif args.assertion_line:
+        if args.hunk:
+            if "defects4j" in args.dataset:
+                prompt = INIT_CHATGPT_INFILL_HUNK_FAILING_TEST_LINE.format(
+                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+                    buggy_hunk=v['buggy_line'],
+                    failing_test=v['failing_tests'][0]['test_method_name'],
+                    error_message=v['failing_tests'][0]['failure_message'].strip(),
+                    failing_line=v['failing_tests'][0]['failing_line'].strip())
+            else:
+                prompt = INIT_CHATGPT_INFILL_HUNK_FAILING_TEST_LINE_QUIXBUGS.format(
+                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+                    buggy_hunk=v['buggy_line'],
+                    function_header=v['function_header'],
+                    values=build_values(v['failing_tests']['input_values']),
+                    return_val=v['failing_tests']['output_values'])
+        else:
+            if "defects4j" in args.dataset:
+                prompt = INIT_CHATGPT_INFILL_FAILING_TEST_LINE.format(
+                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+                    buggy_hunk=v['buggy_line'],
+                    failing_test=v['failing_tests'][0]['test_method_name'],
+                    error_message=v['failing_tests'][0]['failure_message'].strip(),
+                    failing_line=v['failing_tests'][0]['failing_line'].strip())
+            else:
+                prompt = INIT_CHATGPT_INFILL_LINE_FAILING_TEST_LINE_QUIXBUGS.format(
+                    buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+                    buggy_hunk=v['buggy_line'],
+                    function_header=v['function_header'],
+                    values=build_values(v['failing_tests']['input_values']),
+                    return_val=v['failing_tests']['output_values'])
+    elif args.failing_test_method:
+        failing_function = v['failing_tests'][0]['failing_function'].splitlines()
+        leading_white_space = len(failing_function[0]) - len(failing_function[0].lstrip())
+        failing_function = "\n".join([line[leading_white_space:] for line in failing_function])
+        prompt = INIT_CHATGPT_INFILL_FAILING_TEST_METHOD.format(
+            buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+            buggy_hunk=v['buggy_line'],
+            failing_test_method=failing_function,
+            error_message=v['failing_tests'][0]['failure_message'].strip())
+    else:
+        if args.hunk:
+            prompt = INIT_CHATGPT_INFILL_HUNK.format(
+                buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+                buggy_hunk=v['buggy_line'])
+        else:
+            prompt = INIT_CHATGPT_INFILL_PROMPT.format(
+                buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
+                buggy_hunk=v['buggy_line'])
+    return prompt
+
 INIT_PROMPT = """
 The following code is buggy.
 {buggy_code}
