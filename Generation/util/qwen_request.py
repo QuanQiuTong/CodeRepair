@@ -5,7 +5,8 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # ../../Qwen3-1.7B
-DEFAULT_QWEN_MODEL_PATH = "/home/quanqiutong/Projects/Qwen3-1.7B" # os.path.abspath("../../Qwen3-1.7B")
+DEFAULT_QWEN_MODEL_PATH = os.path.abspath("../Qwen3-4B")
+# DEFAULT_QWEN_MODEL_PATH = "/home/quanqiutong/Projects/Qwen3-1.7B"
 
 _qwen_model = None
 _qwen_tokenizer = None
@@ -33,7 +34,7 @@ def request_qwen_engine(config, model_path=DEFAULT_QWEN_MODEL_PATH):
     inputs = _qwen_tokenizer([prompt], return_tensors="pt").to(_qwen_model.device)
     outputs = _qwen_model.generate(
         inputs.input_ids,
-        max_new_tokens=config.get("max_tokens", 512) + 100,  # 思维链太长了
+        max_new_tokens=config.get("max_tokens", 512) + 1024,  # 思维链太长了
         temperature=config.get("temperature", 0.7)
     )
     generated = outputs[:, inputs.input_ids.shape[-1]:]

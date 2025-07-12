@@ -91,6 +91,7 @@ def build_prompt(args, v):
             prompt = INIT_CHATGPT_INFILL_PROMPT.format(
                 buggy_code=(v['prefix'] + "\n" + INFILL_TOKEN + "\n" + v['suffix']),
                 buggy_hunk=v['buggy_line'])
+    return prompt
 
 def chatgpt_apr_infill(args, bugs):
     print(len(bugs))

@@ -17,7 +17,7 @@ from util.util import get_initial_failing_tests, build_values
 # 要求回答简洁
 SYSTEM_MESSAGE = "You are an Automated Program Repair tool.\n" \
                 "Your task is to fix a buggy function or line of code.\n" \
-                "Be brief. Provide only the fix, with the least thinking.\n" \
+                "Be brief. Provide only the fix, with no thinking.\n" \
 
 def create_openai_config(prompt,
                          engine_name="code-davinci-002",
