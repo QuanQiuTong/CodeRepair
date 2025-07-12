@@ -41,7 +41,8 @@ def _build_dynamic_prompt(base_prompt, failed_patches):
             p_clean = p.replace("```java", "").replace("```", "").strip()
             failed_patches_str += f"{i + 1}. ```java\n{p_clean}\n```\n"
         
-        current_prompt += "\n\nThe following attempts have failed. Do not generate them again:\n"
+        # current_prompt += "\n\nThe following attempts have failed. Do not generate them again:\n"
+        current_prompt += "\n\n以下的补丁代码都是错误的，不要再次生成这些代码：\n"
         current_prompt += failed_patches_str
     
     current_prompt += ATTACHED_PROMPT
@@ -301,7 +302,7 @@ def main():
     if args.engine == "qwen":
         my_request = request_qwen_engine
         global ATTACHED_PROMPT
-        ATTACHED_PROMPT = "\n非常重要：最终答案必须仅包含一个代码块内的单行修正Java代码。不要提供任何解释、前言或思考过程。你的整个回答应为以下格式：```java\n[CODE]\n```。"
+        ATTACHED_PROMPT = "\n非常重要：最终答案必须仅包含一个代码块内的单行修正Java代码。不要提供任何解释、前言或思考过程。你的整个回答应为以下格式：\n```java\n[CODE]\n```。"
     else:
         my_request = request_chatgpt_engine
 

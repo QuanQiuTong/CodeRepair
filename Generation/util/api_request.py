@@ -20,6 +20,9 @@ SYSTEM_MESSAGE = "You are an expert Automated Program Repair tool. " \
                  "Provide only the single correct line of code as the fix. " \
                  "Do not explain. Do not add any text other than the code."
 
+SYSTEM_MESSAGE_QWEN = "你是一个负责修复代码缺陷的专家。"\
+    "你的任务是修复一行有缺陷的代码。请仅提供单行正确的代码作为修复，不要解释，也不要添加任何其他文本。"
+
 def create_openai_config(prompt,
                          engine_name="code-davinci-002",
                          stop="# Provide a fix for the buggy function",
@@ -40,7 +43,7 @@ def create_openai_config(prompt,
 # 修改 create_chatgpt_config 函数以支持 DeerAPI 的请求格式
 def create_chatgpt_config(prev: dict, message: str, max_tokens: int, bug_id, bugs, few_shot: int = 0,
                           temperature: float = 1, # default most diverse temperature
-                          system_message: str = SYSTEM_MESSAGE,
+                          system_message: str = SYSTEM_MESSAGE_QWEN,
                           localize: bool = False,
                           hunk: bool = False,
                           function: bool =False,
