@@ -93,123 +93,121 @@ def build_prompt(args, v):
                 buggy_hunk=v['buggy_line'])
     return prompt
 
+def _build_dynamic_prompt(base_prompt, failed_patches):
+    """将历史失败记录追加到基础Prompt后，构建用于当次请求的完整Prompt。"""
+    current_prompt = base_prompt
+    if failed_patches:
+        failed_patches_str = ""
+        for i, p in enumerate(failed_patches):
+            # 移除可能存在的代码块标记，只保留纯代码
+            p_clean = p.replace("```java", "").replace("```", "").strip()
+            failed_patches_str += f"{i + 1}. ```java\n{p_clean}\n```\n"
+        
+        current_prompt += "\n\nThe following attempts have failed. Do not generate them again:\n"
+        current_prompt += failed_patches_str
+    
+    current_prompt += ATTACHED_PROMPT
+    return current_prompt
+
 def chatgpt_apr_infill(args, bugs):
+    """主修复函数，使用“带记忆的单次请求”策略。"""
     print(len(bugs))
-    if args.hunk:
-        max_tokens = 200 # + 200 # for CoT
-    else:
-        max_tokens = 100 # + 200 # for CoT
+    max_tokens = 150  # 为单行修复提供足够的空间
     results = {}
-    # with open(os.path.join(args.folder, "lm_repair.json"), "r") as f:
-    #     results = json.load(f)
-    #
-    # found = False
 
     for bug, v in bugs.items():
         print("---- {} ----".format(bug))
         if "suffix" not in v or (not args.hunk and bug == "subsequences"):
             continue
-        # if bug != "Mockito-1.java" and found is False:
-        #     continue
-        # found = True
-        # if bug in results:
-        #     continue
 
         base_prompt = build_prompt(args, v)
-
-        # "Be brief, do not repeat the problem description, just provide the fix. Wrap the fix in a \n```\ncode block\n```"
-        prompt = base_prompt + ATTACHED_PROMPT
-
-        config = create_chatgpt_config(prev={}, message=prompt, max_tokens=max_tokens,
-                                       bug_id=bug, bugs=bugs, few_shot=args.few_shot, hunk=args.hunk, dataset=args.dataset)
-        if num_tokens_from_messages(config["messages"]) + max_tokens > 4096:
-            continue
-
-        results[bug] = []
+        
+        failed_patches = []
         generations = {}
-        tries = 0
-        true_valid, reset = False, True
-        while tries < args.total_tries and not true_valid:
-            history = {}
-            prompt_times = 0
-            repeated_bad = False
+        results[bug] = []
+        is_fixed = False
+        
+        for tries in range(args.total_tries):
+            if is_fixed:
+                break
 
-            while prompt_times < args.chain_length:
-                config = create_chatgpt_config(prev=history, message=prompt, max_tokens=max_tokens,
-                                               bug_id=bug, bugs=bugs, few_shot=args.few_shot, hunk=args.hunk,
-                                               dataset=args.dataset)
-                if num_tokens_from_messages(config["messages"]) + max_tokens > 4096:
-                    break
-                for message in config['messages']:
-                    print("{} : {}".format(message['role'], message['content']))
-                ret = my_request(config)
+            print(f"Tries: {tries + 1}/{args.total_tries}")
+            
+            # 1. 动态构建带所有失败历史的Prompt
+            current_prompt = _build_dynamic_prompt(base_prompt, failed_patches)
+            
+            # 2. 每次都创建全新的、无历史记录的config
+            config = create_chatgpt_config(prev={}, message=current_prompt, max_tokens=max_tokens,
+                                           bug_id=bug, bugs=bugs, few_shot=args.few_shot, hunk=args.hunk,
+                                           dataset=args.dataset)
 
-                # 统计并打印输出 token 数量
-                completion_tokens = ret['usage']['completion_tokens']
-                print(f"Tries: {tries + 1} | Output Tokens: {completion_tokens}")
+            if num_tokens_from_messages(config["messages"]) + max_tokens > 4096:
+                print("Prompt is too long, skipping.")
+                break
 
-                tries += 1
-                # print(ret["choices"][0]['message'])
-                func, pre_history = complex_chatgpt_parse(ret["choices"][0]['message']["content"],
-                                                          suffix=v['suffix'],
-                                                          prefix=v['prefix'])
-                print("Tries: {} Tokens: {}".format(tries, num_tokens_from_messages(config["messages"])))
-                if func != "":
-                    if "quixbugs-python" in args.dataset:
-                        output = v['prefix'] + "\n" + v['leading_whitespace'] + func.strip() + "\n" + v['suffix']
-                    else:
-                        output = v['prefix'] + "\n" + func.strip() + "\n" + v['suffix']
-                    print(get_unified_diff(v['buggy'], output))
-                    if output not in generations:
-                        if args.lang == "java":
-                            valid, error_message = write_file(args, args.folder, output,
-                                                              bug.split(".java")[0] + "_{}.java".format(
-                                                                  len(generations)),
-                                                              bug.split(".java")[0], skip_val=False, lang=args.lang,
-                                                              reset=reset)
-                        else:
-                            valid, error_message = write_file(args, args.folder, output,
-                                                              bug.split(".py")[0] + "_{}.py".format(
-                                                                  len(generations)),
-                                                              bug.split(".py")[0], skip_val=False, lang=args.lang,
-                                                              reset=reset)
-                        generations[output] = error_message
-                        if reset:
-                            reset = False
-                    else:
-                        valid = False
-                        error_message = generations[output]
-                    results[bug].append(
-                        {'patch': func, 'valid': valid, "prompt": config, "prompt_times": prompt_times,
-                         'tries': tries, "usage": ret['usage'], "error": error_message, 'output': ret})
-                    if valid:
-                        true_valid = True
-                        break
+            for message in config['messages']:
+                print("{} : {}".format(message['role'], message['content']))
+            
+            ret = my_request(config)
+            
+            completion_tokens = ret['usage']['completion_tokens']
+            print(f"Output Tokens: {completion_tokens}")
 
-                    history = config
-                    # 注意：这里的 pre_history 是经过 qwen_request.py 清理后的，不含 <think>
-                    history["messages"].append({"role": "assistant", "content": pre_history}) 
-                    
-                    # 生成基础的错误信息
-                    response = build_error_message_based_chatgpt_response_message(args, error_message, v, args.hunk)
-                    
-                    # 加入明确的负面约束，告诉模型哪个 patch 失败了
-                    failed_patch = func.strip()
-                    response += f"\nYour previous attempt was:\n```java\n{failed_patch}\n```\nThis was incorrect. Do not generate this line again."
+            patch, _ = complex_chatgpt_parse(ret["choices"][0]['message']["content"],
+                                             suffix=v['suffix'],
+                                             prefix=v['prefix'])
+            
+            if not patch or not patch.strip():
+                print("Generated an empty patch. Trying again.")
+                continue
 
-                    # 在反馈消息后追加关键指令，以保持输出简洁
-                    response += ATTACHED_PROMPT
-                    
-                    history["messages"].append({"role": "user", "content": response})
-                    prompt_times += 1
-                    repeated_bad = False
-                else:
-                    if repeated_bad:  # to address multiple bad outputs ending up here causing issue
-                        break
-                    repeated_bad = True
+            patch_content = patch.strip()
+            
+            # 3. 检查是否重复生成了已知的失败补丁
+            if patch_content in failed_patches:
+                print("Generated a repeated failed patch. Trying again.")
+                continue
+
+            if "quixbugs-python" in args.dataset:
+                output = v['prefix'] + "\n" + v['leading_whitespace'] + patch_content + "\n" + v['suffix']
+            else:
+                output = v['prefix'] + "\n" + patch_content + "\n" + v['suffix']
+            
+            print(get_unified_diff(v['buggy'], output))
+
+            if output in generations:
+                is_valid = False
+                error_message = generations[output]
+            else:
+                if args.lang == "java":
+                    is_valid, error_message = write_file(args, args.folder, output,
+                                                      bug.split(".java")[0] + "_{}.java".format(len(generations)),
+                                                      bug.split(".java")[0], skip_val=False, lang=args.lang,
+                                                      reset=(tries == 0))
+                else: # python
+                    is_valid, error_message = write_file(args, args.folder, output,
+                                                      bug.split(".py")[0] + "_{}.py".format(len(generations)),
+                                                      bug.split(".py")[0], skip_val=False, lang=args.lang,
+                                                      reset=(tries == 0))
+                generations[output] = error_message
+
+            results[bug].append({
+                'patch': patch_content, 'valid': is_valid, "prompt": config,
+                'tries': tries + 1, "usage": ret['usage'], 
+                "error": error_message, 'output': ret
+            })
+            
+            if is_valid:
+                print(f"Bug {bug} fixed successfully!")
+                is_fixed = True
+            else:
+                # 4. 将新的失败补丁加入“黑名单”
+                if patch_content not in failed_patches:
+                    failed_patches.append(patch_content)
 
         with open(os.path.join(args.folder, "lm_repair.json"), "w") as f:
-            json.dump(results, f)
+            json.dump(results, f, indent=2)
+
 
 
 def chatgpt_apr(args, bugs):

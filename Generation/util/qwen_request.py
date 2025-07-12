@@ -1,4 +1,3 @@
-# Generation/util/qwen_request.py
 import os
 
 import torch
@@ -31,11 +30,21 @@ def request_qwen_engine(config, model_path=DEFAULT_QWEN_MODEL_PATH):
 
     # print("\n-----[Qwen Prompt]-----\n" + prompt + "\n---------------\n")
 
+    # --- 定义停止词 ---
+    # 我们希望模型在生成代码块后立即停止
+    stop_words = ["```", "<|im_end|>", "user :"] 
+    stop_token_ids = [
+        _qwen_tokenizer.encode(word, add_special_tokens=False) for word in stop_words
+    ]
+    # transformers 需要一个列表的列表
+    stop_token_ids = [item for sublist in stop_token_ids for item in sublist]
+
     inputs = _qwen_tokenizer([prompt], return_tensors="pt").to(_qwen_model.device)
     outputs = _qwen_model.generate(
         inputs.input_ids,
-        max_new_tokens=config.get("max_tokens", 512) + 2048,  # 思维链太长了
-        temperature=config.get("temperature", 0.7)
+        max_new_tokens=config.get("max_tokens", 512) + 2400,  # 思维链太长了
+        temperature=config.get("temperature", 1.15),
+        eos_token_id=stop_token_ids # 应用停止词
     )
     generated = outputs[:, inputs.input_ids.shape[-1]:]
     response = _qwen_tokenizer.decode(generated[0], skip_special_tokens=True)
@@ -73,12 +82,3 @@ def request_qwen_engine(config, model_path=DEFAULT_QWEN_MODEL_PATH):
             "total_tokens": inputs.input_ids.shape[-1] + generated.shape[-1]
         }
     }
-
-# 优化后的 Qwen 系统提示
-CONCISE_QWEN_SYSTEM_PROMPT = """You are an expert Automated Program Repair tool.
-Your goal is to fix the buggy code with a single line replacement.
-Analyze the user's request, which includes the code, the buggy line, and the test failure.
-Think step-by-step but be concise.
-1. Briefly state the root cause of the error.
-2. Provide the single correct line of code to fix the bug inside a Java code block.
-Do not repeat the problem description. Be direct and focus on the solution."""
