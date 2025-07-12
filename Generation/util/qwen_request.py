@@ -22,60 +22,63 @@ def request_qwen_engine(config, model_path=DEFAULT_QWEN_MODEL_PATH):
     global _qwen_model, _qwen_tokenizer
     if _qwen_model is None or _qwen_tokenizer is None:
         load_qwen_model(model_path)
-    # 假设config["messages"]是openai风格的chat消息
+    
     prompt = _qwen_tokenizer.apply_chat_template(
         config["messages"], tokenize=False, add_generation_prompt=True
     )
     print("\n-----[above is Qwen prompt]-----\n")
 
-    # print("\n-----[Qwen Prompt]-----\n" + prompt + "\n---------------\n")
-
     # --- 定义停止词 ---
-    # 我们希望模型在生成代码块后立即停止
-    stop_words = ["```", "<|im_end|>", "user :"] 
-    stop_token_ids = [
-        _qwen_tokenizer.encode(word, add_special_tokens=False) for word in stop_words
-    ]
-    # transformers 需要一个列表的列表
-    stop_token_ids = [item for sublist in stop_token_ids for item in sublist]
+    # 新增 </think> 作为停止词，可以在模型完成思考后立即停止，防止其继续输出
+    stop_words = ["```", "<|im_end|>", "</think>", "user :"] 
+    # 使用列表推导式来处理可能的多token停止词
+    stop_token_ids = [tid for word in stop_words for tid in _qwen_tokenizer.encode(word, add_special_tokens=False)]
+    # Transformers的StoppingCriteria需要一个二维列表，但eos_token_id是一维的。这里的实现是正确的。
 
     inputs = _qwen_tokenizer([prompt], return_tensors="pt").to(_qwen_model.device)
+    
     outputs = _qwen_model.generate(
         inputs.input_ids,
-        max_new_tokens=config.get("max_tokens", 512) + 2400,  # 思维链太长了
-        temperature=config.get("temperature", 1.15),
-        eos_token_id=stop_token_ids # 应用停止词
+        # 1. 大幅降低 temperature，减少随机性，使其输出更稳定、更具确定性
+        temperature=config.get("temperature", 0.4), 
+        # 2. 增加 repetition_penalty，惩罚重复的token，有效避免无限循环
+        repetition_penalty=1.1,
+        # 3. max_new_tokens 可以适当减小，因为我们期望直接得到代码，而不是长篇大论
+        max_new_tokens=config.get("max_tokens", 256), # 150(来自config) + a buffer
+        # 4. 使用 top_p 进行核采样，是比temperature更推荐的控制多样性的方式
+        top_p=0.9,
+        # 5. 应用停止词ID
+        eos_token_id=stop_token_ids 
     )
+    
     generated = outputs[:, inputs.input_ids.shape[-1]:]
     response = _qwen_tokenizer.decode(generated[0], skip_special_tokens=True)
     print("\n-----[Qwen Raw Output]-----\n" + response + "\n---------------\n")
 
-    # 从原始响应中提取代码块，并移除思维链
-    extracted_code = response
-    # 优先移除 <think> 标签
-    if "<think>" in extracted_code:
-        # 假设 <think> ... </think> 之后是代码
-        think_end_index = extracted_code.rfind("</think>")
+    # ... (后处理逻辑基本不变，但可以简化) ...
+    
+    # 简化后的后处理逻辑
+    final_code = ""
+    # 优先从代码块中提取
+    if "```" in response:
+        # 使用正则表达式更稳健地提取
+        import re
+        match = re.search(r"```(?:java)?\n(.*?)\n```", response, re.DOTALL)
+        if match:
+            final_code = match.group(1).strip()
+    
+    # 如果没有找到代码块，或者提取失败，则认为整个响应是代码（作为后备方案）
+    if not final_code:
+        # 移除可能残留的思维链标签
+        think_end_index = response.rfind("</think>")
         if think_end_index != -1:
-            extracted_code = extracted_code[think_end_index + len("</think>"):]
+            final_code = response[think_end_index + len("</think>"):].strip()
+        else:
+            final_code = response.strip()
 
-    if "```" in extracted_code:
-        # 假设代码在第一个 ``` 块中
-        parts = extracted_code.split("```")
-        if len(parts) > 1:
-            # 提取代码块内容，并移除可能的语言标识符（如 java）
-            code_content = parts[1].strip() # 使用 strip() 清理空白
-            if code_content.startswith("java"):
-                code_content = '\n'.join(code_content.split('\n')[1:])
-            
-            # 返回一个干净的、只包含代码块的字符串
-            extracted_code = "```java\n" + code_content + "\n```"
-    else:
-        # 如果没有代码块，可能模型只生成了代码行
-        extracted_code = response.strip()
-
+    # 包装成OpenAI格式返回
     return {
-        "choices": [{"message": {"content": extracted_code}}],
+        "choices": [{"message": {"content": f"```java\n{final_code}\n```"}}],
         "usage": {
             "prompt_tokens": inputs.input_ids.shape[-1],
             "completion_tokens": generated.shape[-1],

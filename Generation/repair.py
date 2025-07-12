@@ -30,9 +30,7 @@ def load_length(lang="python"):
             length = json.load(f)
     return length
 
-
-ATTACHED_PROMPT = "\nProvide the fix only, with the least thinking.\n" \
-                    "The fix should be a single line wrapped in \n```\ncode block\n```\n"
+ATTACHED_PROMPT = "\nVERY IMPORTANT: Your final answer must be ONLY the single line of corrected Java code inside a code block. Do not provide any explanation, preamble, or thinking process. Your entire response should be in the format ```java\n[CODE]\n```."
 
 def build_prompt(args, v):
     INFILL_TOKEN=">>> [ INFILL ] <<<"
@@ -127,6 +125,9 @@ def chatgpt_apr_infill(args, bugs):
         results[bug] = []
         is_fixed = False
         
+        consecutive_failures = 0
+        MAX_CONSECUTIVE_FAILURES = 5 # 设置一个阈值
+
         for tries in range(args.total_tries):
             if is_fixed:
                 break
@@ -167,6 +168,18 @@ def chatgpt_apr_infill(args, bugs):
             if patch_content in failed_patches:
                 print("Generated a repeated failed patch. Trying again.")
                 continue
+
+            # 在检查patch是否为空或重复后
+            if not patch or not patch.strip() or patch_content in failed_patches:
+                print("Generated an empty or repeated failed patch. Trying again.")
+                consecutive_failures += 1
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    print(f"Failed {MAX_CONSECUTIVE_FAILURES} consecutive times. Breaking loop for this bug.")
+                    break # 跳出当前bug的修复循环
+                continue
+            else:
+                # 如果成功生成了新补丁，重置计数器
+                consecutive_failures = 0
 
             if "quixbugs-python" in args.dataset:
                 output = v['prefix'] + "\n" + v['leading_whitespace'] + patch_content + "\n" + v['suffix']
